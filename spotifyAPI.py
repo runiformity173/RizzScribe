@@ -46,3 +46,19 @@ async def getSong(songTitle,artist):
         return {}
     result = response.json()
     return result
+async def getAlbum(albumTitle,artist):
+    response = requests.get('https://api.spotify.com/v1/search',
+    params={
+      'q': f'album:{albumTitle} artist:{artist}',
+      'type': "album",
+      "limit":1,
+      "offset":0
+    },
+    headers= {
+      'Authorization': ('Bearer ' + await getCurrentToken()),
+    })
+    if response.status_code != 200:
+        print(response)
+        return {}
+    result = response.json()
+    return result

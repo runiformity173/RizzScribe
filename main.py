@@ -206,19 +206,35 @@ async def secret(interaction:discord.Interaction,*,args:str):
 @discord.app_commands.command(name="reference",description="Reference a song by its title and artist")
 async def reference(interaction:discord.Interaction,title:str,artist:str):
     channel = interaction.channel
-    result = await spotifyAPI.getSong(title,artist)
-    if "tracks" not in result:
-        await interaction.response.send_message("sorry it failed, mb",ephemeral=True)
-        return
-    result = result["tracks"]["items"][0]
-    embed = discord.Embed(
-        title=result["name"],
-        description=" | ".join([i["name"] for i in result["artists"]]),
-        color=discord.Color.light_gray()
-	)
-    embed.set_thumbnail(url=result["album"]["images"][0]["url"])
-    await channel.send(embed=embed)
-    await interaction.response.send_message("worked",ephemeral=True)
+    if title.startswith("album "):
+        title = title[6:]
+        result = await spotifyAPI.getAlbum(title,artist)
+        if "albums" not in result:
+            await interaction.response.send_message("sorry it failed, mb",ephemeral=True)
+            return
+        result = result["albums"]["items"][0]
+        embed = discord.Embed(
+            title=result["name"],
+            description=" | ".join([i["name"] for i in result["artists"]]),
+            color=discord.Color.light_gray()
+        )
+        embed.set_thumbnail(url=result["images"][0]["url"])
+        await channel.send(embed=embed)
+        await interaction.response.send_message("worked",ephemeral=True)
+    else:
+        result = await spotifyAPI.getSong(title,artist)
+        if "tracks" not in result:
+            await interaction.response.send_message("sorry it failed, mb",ephemeral=True)
+            return
+        result = result["tracks"]["items"][0]
+        embed = discord.Embed(
+            title=result["name"],
+            description=" | ".join([i["name"] for i in result["artists"]]),
+            color=discord.Color.light_gray()
+        )
+        embed.set_thumbnail(url=result["album"]["images"][0]["url"])
+        await channel.send(embed=embed)
+        await interaction.response.send_message("worked",ephemeral=True)
 @discord.app_commands.context_menu(name="Put On Blast")
 async def putOnBlast(interaction,message:discord.Message):
     a = message.content
