@@ -6,10 +6,12 @@ pieceCharMapping = {
     "knight":"♘♞",
     "pawn":"♙♟"
 }
-import os
-RESET = '\033[0m'
+labels = [" abcdefgh","1","2","3","4","5","6","7","8"]
+import os,discord,io
+from PIL import Image, ImageDraw, ImageFont
+RESET = '\u001b[0m'
 def colorText(r, g, b):
-    return f'\033[38;2;{r};{g};{b}m'
+    return f'\u001b[38;2;{r};{g};{b}m'
 class ZoeChessPiece:
     def __init__(self,piece,player,x,y):
         self.piece = piece
@@ -22,13 +24,13 @@ class ZoeChessPiece:
     def getNote(self):
         return "\n".join(self.notes)
     def getMarkers(self):
-        return "\n".join([f"{i[0]} for {i[1]} turns" for i in self.markers])
+        return "\n".join([(f"{i[0]} for {i[1]} turns" if i[1] > -1 else i[0]) for i in self.markers])
     def getDisplay(self, instance):
         if len(self.markers) != 1:
-            return f" {self.displayChar} "
+            return self.displayChar,"black"
         markerIndex = instance.markerNames.index(self.markers[0][0])
-        r1,r2,g1,g2,b1,b2 = list(instance.markerColors[markerIndex][1:])
-        return f" {colorText(int(r1+r2,16),int(g1+g2,16),int(b1+b2,16))}{self.displayChar}{RESET} "
+        hex = instance.markerColors[markerIndex]
+        return self.displayChar,hex
 import random
 class ZoeChessRules:
     @staticmethod
@@ -36,21 +38,21 @@ class ZoeChessRules:
         return "abcdefgh".index(notation[0]),int(notation[1])-1
     @staticmethod
     def isValidNotation(notation):
-        return notation[0] in "abcdefgh" and notation[1] in "12345678"
+        return len(notation) > 1 and notation[0] in "abcdefgh" and notation[1] in "12345678"
     @staticmethod
     def xYToNotation(x, y):
         return "abcdefgh"[x]+str(y+1)
 class ZoeChessInstance:
-    # This tells the IDE or linter that all our children will be TicTacToeButtons
-    # This is not required
     WHITE = 0
     BLACK = 1
-
-    def __init__(self, player1, player2):
+    @classmethod
+    async def init(cls, player1, player2, originalMessage):
+        self = cls()
         self.current_player = random.randint(0,1)
         self.markerNames = []
         self.markerDescriptions = []
         self.markerColors = []
+        self.messageInstance = originalMessage
         self.players = [player1,player2]
         self.board = [
             [ZoeChessPiece("rook",1,0,0), ZoeChessPiece("knight",1,1,0), ZoeChessPiece("bishop",1,2,0), ZoeChessPiece("queen",1,3,0), ZoeChessPiece("king",1,4,0), ZoeChessPiece("bishop",1,5,0), ZoeChessPiece("knight",1,6,0), ZoeChessPiece("rook",1,7,0)],
@@ -62,6 +64,8 @@ class ZoeChessInstance:
             [ZoeChessPiece("pawn",0,0,6), ZoeChessPiece("pawn",0,1,6), ZoeChessPiece("pawn",0,2,6), ZoeChessPiece("pawn",0,3,6), ZoeChessPiece("pawn",0,4,6), ZoeChessPiece("pawn",0,5,6), ZoeChessPiece("pawn",0,6,6), ZoeChessPiece("pawn",0,7,6)],
             [ZoeChessPiece("rook",0,0,7), ZoeChessPiece("knight",0,1,7), ZoeChessPiece("bishop",0,2,7), ZoeChessPiece("queen",0,3,7), ZoeChessPiece("king",0,4,7), ZoeChessPiece("bishop",0,5,7), ZoeChessPiece("knight",0,6,7), ZoeChessPiece("rook",0,7,7)],
         ]
+        await self.printBoard()
+        return self
     def move(self,fromNotation,toNotation):
         fromNotation = fromNotation[:2]
         toNotation = toNotation[:2]
@@ -103,7 +107,7 @@ class ZoeChessInstance:
         x,y = ZoeChessRules.notationToXY(posNotation)
         if self.board[y][x] == None:
             return "There's no piece there, stupidface"
-        return self.board[y][x].getNote()
+        return self.board[y][x].getNote() or "This piece has no note"
     def clearNote(self,posNotation):
         posNotation = posNotation[:2]
         if not ZoeChessRules.isValidNotation(posNotation): return "Fix your notation, you bum"
@@ -223,19 +227,63 @@ class ZoeChessInstance:
         self.current_player = 1-self.current_player
         for j in self.board:
             for i in j:
+                if i is None:continue
                 if i.player == self.players[self.current_player]:
                     continue
                 for k in range(len(i.markers)-1,-1,-1):
                     i.markers[k][1] -= 1
                     if i.markers[k][1] == 0:
                         i.markers.pop(k)
-    def printBoard(self):
-        print("   ".join(list(" abcdefgh")))
-        print("  +"+"---+"*8)
-        for j in range(8):
-            print("|".join([str(j+1) + " ",*[i.getDisplay(self) if i else "   " for i in self.board[j]],""]))
-            print("  +"+"---+"*8)
-    def handleCommand(self,command):
+    
+    async def printBoard(self):
+        square_size = 50
+        board_size = 9
+        font = ImageFont.truetype("DejaVuSansMono.ttf", 36)
+
+        img = Image.new("RGB", (square_size * board_size, square_size * board_size), "white")
+        draw = ImageDraw.Draw(img)
+
+        colors = [(240, 217, 181), (181, 136, 99)]
+
+        for y in range(board_size):
+            for x in range(board_size):
+                color = colors[(x + y) % 2] if y>0<x else (32,32,36)
+                draw.rectangle(
+                    [
+                        (x * square_size, y * square_size),
+                        ((x + 1) * square_size, (y + 1) * square_size)
+                    ],
+                    fill=color
+                )
+
+                piece = self.board[y-1][x-1] if y>0<x else labels[y][x]
+                text = (piece,"white") if (isinstance(piece,str)) else (piece.getDisplay(self) if piece else "")
+                if text:
+                    w, h = draw.textlength(text[0], font=font),36
+                    draw.text(
+                        (
+                            x * square_size + (square_size - w) / 2,
+                            y * square_size + (square_size - h) / 2
+                        ),
+                        text[0],
+                        fill=text[1],
+                        font=font
+                    )
+
+        # Save image to a BytesIO buffer
+        buffer = io.BytesIO()
+        img.save(buffer, format="PNG")
+        buffer.seek(0)
+        file = discord.File(buffer, filename="board.png")
+        channel = self.messageInstance.channel
+        if self.messageInstance:
+            try:
+                await self.messageInstance.delete()
+            except:
+                pass
+        self.messageInstance = await channel.send(files=[file])
+
+    def executeCommand(self,command):
         if command[0] == "move":
             if len(command) < 3: return "Malformed move command"
             if command[2] == "river": return self.moveToRiver(command[1])
@@ -287,37 +335,32 @@ class ZoeChessInstance:
             self.endTurn()
             return "Passed the turn"
         return "That's not a command, you imbicile"
-game = ZoeChessInstance("a","b")
-game.printBoard()
-while True:
-    command = input().split(" ")
-    os.system("clear")
-    res = game.handleCommand(command)
-    game.printBoard()
-    print(res)
-
-# /zoechess move [fromPos] [toPos] ✓✓
-# /zoechess move [fromPos on border] river ✓✓ - might not be able to take pieces, especially king
+    async def handleCommand(self,*command):
+        res = self.executeCommand(command)
+        await self.printBoard()
+        return res
+# /zoechess move [fromPos] [toPos] ✓✓✓
+# /zoechess move [fromPos on border] river ✓✓✓
 
 # /zoechess marker new [name] [color] [description] ✓✓
 # /zoechess marker getDescription [name] ✓✓
-# /zoechess marker read [pos] ✓✓ don't let it say turns if it's -1
+# /zoechess marker read [pos] ✓✓
 # /zoechess marker edit color [name] [newColor] ✓✓
 # /zoechess marker edit description [name] [newDescription] ✓✓
 # /zoechess marker add [name] [pos] [?duration] ✓✓
 # /zoechess marker changeDuration [name] [pos] [newDuration] ✓✓
 # /zoechess marker remove [name] [pos] ✓✓
 
-# /zoechess addPiece [pieceOwner] [pieceType] [pos] ✓✓
+# /zoechess addPiece [pieceOwner] [pieceType] [pos] ✓✓✓
 
-# /zoechess removePiece [pos] ✓✓
+# /zoechess removePiece [pos] ✓✓✓
 
 # /zoechess note read [pos] ✓✓
 # /zoechess note add [pos] [newNote] ✓✓
 # /zoechess note replace [pos] [newNote] ✓✓
 # /zoechess note clear [pos] ✓✓
 
-# /zoechess pass ✓✓
+# /zoechess pass ✓✓✓
 
 """
 Rules:
